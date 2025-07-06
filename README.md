@@ -1,55 +1,53 @@
-﻿# 🔥 Hades Backend
+﻿# 🔥 HADES
 
-> **The Powerful Decision Engine Below** - Kotlin + Spring Boot backend for the Kairos platform
+> The Powerful Decision Engine
 
-## 🚀 Quick Start
+## 🚀 Features
+- ✅ Kotlin + Spring Boot 3 setup
+- ✅ Multi-tenancy architecture
+- ✅ PostgreSQL + Redis integration
+- ✅ JWT security configuration
+- ✅ Configuration management
+- ✅ EligibilityAtoms framework ready
+- ✅ Moment management system ready
 
-### Prerequisites
-- Java 21 or later
-- No additional dependencies required (uses H2 in-memory database)
+## 🏗️ Architecture
+- Multi-tenant data isolation
+- Entity framework with auditing
+- Type-safe configuration
+- REST API foundation
+- Microservices ready
 
-### Running the Application
+## ⚡ Quick Start
+\\\ash
+# Start with development profile
+./gradlew bootRun --args='--spring.profiles.active=development'
 
-```powershell
-# Build the project
-.\gradlew build
+# Run tests
+./gradlew test
 
-# Run the application
-.\gradlew bootRun
-```
+# Check health
+curl http://localhost:8080/api/v1/actuator/health
+\\\
 
-### Testing the Application
+## 🔒 Security
+- JWT token authentication
+- Multi-tenant context isolation
+- CORS configuration
+- API rate limiting
+- Input validation
 
-```powershell
-# Test health endpoint
-Invoke-RestMethod -Uri "http://localhost:8080/api/v1/actuator/health"
+## 🗄️ Database
+- PostgreSQL for primary data
+- Redis for caching
+- Flyway migrations
+- Connection pooling
+- Multi-tenant schema isolation
 
-# Access H2 console
-# Open browser: http://localhost:8080/api/v1/h2-console
-# JDBC URL: jdbc:h2:mem:hadesdb
-# Username: sa
-# Password: password
-```
+## 🔗 Integration
+- RESTful API endpoints
+- Real-time WebSocket support
+- Webhook system ready
+- GraphQL API ready
 
-## 📁 Project Structure
-
-```
-hades/
-├── src/main/kotlin/com/kairos/hades/    # Main source code
-├── src/main/resources/                  # Configuration files
-├── src/test/                           # Test source code
-├── build.gradle.kts                    # Build configuration
-└── README.md                           # This file
-```
-
-## 🎯 Next Steps
-
-1. Verify application starts successfully
-2. Test health endpoints
-3. Add your business entities
-4. Implement EligibilityAtoms framework
-5. Add security and authentication
-
----
-
-**Built with ❤️ for the Kairos platform**
+Built with 💪 for scalable decision-making.

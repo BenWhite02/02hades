@@ -1,59 +1,387 @@
-﻿# =============================================================================
-# 🔥 HADES BACKEND - MINIMAL APPLICATION CONFIGURATION
-# =============================================================================
-# File: src/main/resources/application.yml
-# Purpose: Minimal configuration to get the application running
+﻿# File: src/main/resources/application.yml
+# 🔥 HADES Backend Configuration
+# Kotlin + Spring Boot 3 Application Configuration
+# The Powerful Decision Engine Below
 
+# =============================================================================
+# SERVER CONFIGURATION
+# =============================================================================
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: ${SERVER_CONTEXT_PATH:/api/v1}
+    session:
+      cookie:
+        http-only: true
+        secure: ${COOKIE_SECURE:false}
+        same-site: strict
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+  error:
+    include-message: ${ERROR_INCLUDE_MESSAGE:never}
+    include-binding-errors: ${ERROR_INCLUDE_BINDING:never}
+    include-stacktrace: ${ERROR_INCLUDE_STACKTRACE:never}
+    include-exception: false
+
+# =============================================================================
+# SPRING CONFIGURATION
+# =============================================================================
 spring:
   application:
-    name: kairos-hades
+    name: ${SPRING_APPLICATION_NAME:hades-backend}
   
-  # H2 Database Configuration (Simple and Working)
+  # Profile Configuration
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:development}
+  
+  # Database Configuration
   datasource:
-    url: jdbc:h2:mem:hadesdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    username: sa
-    password: password
-    driver-class-name: org.h2.Driver
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/kairos_hades}
+    username: ${DATABASE_USERNAME:kairos_user}
+    password: ${DATABASE_PASSWORD:kairos_password}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: HadesConnectionPool
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT:300000}
+      max-lifetime: ${DB_POOL_MAX_LIFETIME:1800000}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT:30000}
+      leak-detection-threshold: ${DB_POOL_LEAK_DETECTION:60000}
   
-  # H2 Console for development
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
-  
-  # JPA Configuration
+  # JPA/Hibernate Configuration
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: ${JPA_DDL_AUTO:validate}
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: ${JPA_SHOW_SQL:false}
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: ${HIBERNATE_FORMAT_SQL:false}
+        use_sql_comments: ${HIBERNATE_SQL_COMMENTS:false}
+        jdbc:
+          batch_size: ${HIBERNATE_BATCH_SIZE:25}
+          batch_versioned_data: true
+        cache:
+          use_second_level_cache: ${HIBERNATE_L2_CACHE:true}
+          use_query_cache: ${HIBERNATE_QUERY_CACHE:true}
+          region:
+            factory_class: org.hibernate.cache.jcache.JCacheRegionFactory
+  
+  # Redis Configuration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:2000ms}
+      lettuce:
+        pool:
+          max-active: ${REDIS_POOL_MAX_ACTIVE:8}
+          max-wait: ${REDIS_POOL_MAX_WAIT:-1ms}
+          max-idle: ${REDIS_POOL_MAX_IDLE:8}
+          min-idle: ${REDIS_POOL_MIN_IDLE:0}
+  
+  # Flyway Configuration
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
+    baseline-on-migrate: ${FLYWAY_BASELINE_ON_MIGRATE:true}
+    validate-on-migrate: ${FLYWAY_VALIDATE_ON_MIGRATE:true}
+    clean-disabled: ${FLYWAY_CLEAN_DISABLED:true}
+  
+  # Cache Configuration
+  cache:
+    type: redis
+    cache-names: 
+      - eligibilityAtoms
+      - moments
+      - tenants
+      - decisions
+      - themes
+      - userSessions
+    redis:
+      time-to-live: ${CACHE_TTL:3600000}
+      key-prefix: "hades:cache:"
+      use-key-prefix: true
+      cache-null-values: false
+  
+  # Security Configuration
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8080}
+          jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8080/.well-known/jwks.json}
+  
+  # Jackson Configuration
+  jackson:
+    default-property-inclusion: NON_NULL
+    serialization:
+      write-dates-as-timestamps: false
+      indent-output: ${JACKSON_INDENT_OUTPUT:false}
+    deserialization:
+      fail-on-unknown-properties: false
+      accept-single-value-as-array: true
+    mapper:
+      accept-case-insensitive-enums: true
+  
+  # Mail Configuration
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:true}
+  
+  # Actuator Configuration
+  management:
+    endpoints:
+      web:
+        exposure:
+          include: ${ACTUATOR_ENDPOINTS:health,info,metrics,prometheus}
+        base-path: ${ACTUATOR_BASE_PATH:/actuator}
+    endpoint:
+      health:
+        show-details: ${ACTUATOR_HEALTH_DETAILS:when-authorized}
+        probes:
+          enabled: true
+    metrics:
+      export:
+        prometheus:
+          enabled: ${PROMETHEUS_ENABLED:true}
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+logging:
+  level:
+    com.kairos.hades: ${LOG_LEVEL:INFO}
+    org.springframework.security: ${SECURITY_LOG_LEVEL:WARN}
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:WARN}
+    org.hibernate.type.descriptor.sql.BasicBinder: ${SQL_PARAM_LOG_LEVEL:WARN}
+    org.springframework.web: ${WEB_LOG_LEVEL:INFO}
+    org.springframework.data: ${DATA_LOG_LEVEL:INFO}
+    redis.clients: ${REDIS_LOG_LEVEL:WARN}
+    com.zaxxer.hikari: ${HIKARI_LOG_LEVEL:WARN}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{tenantId}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{tenantId}] %logger{36} - %msg%n"
+  file:
+    name: ${LOG_FILE_PATH:./logs/hades-backend.log}
+    max-size: ${LOG_FILE_MAX_SIZE:100MB}
+    max-history: ${LOG_FILE_MAX_HISTORY:30}
+
+# =============================================================================
+# HADES APPLICATION CONFIGURATION
+# =============================================================================
+hades:
+  # API Configuration
+  api:
+    version: ${API_VERSION:1.0.0}
+    title: ${API_TITLE:Hades Backend API}
+    description: ${API_DESCRIPTION:The Powerful Decision Engine for Kairos}
+    contact:
+      name: ${API_CONTACT_NAME:Kairos Team}
+      email: ${API_CONTACT_EMAIL:team@kairos.app}
+    license:
+      name: ${API_LICENSE_NAME:Proprietary}
+    error:
+      include-stack-trace: ${API_INCLUDE_STACK_TRACE:false}
+      include-internal-details: ${API_INCLUDE_INTERNAL_DETAILS:false}
+      max-error-message-length: ${API_MAX_ERROR_MESSAGE_LENGTH:500}
+  
+  # Security Configuration
+  security:
+    jwt:
+      secret: ${JWT_SECRET:your-256-bit-secret-key-change-this-in-production}
+      expiration: ${JWT_EXPIRATION:86400}
+      refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800}
+      issuer: ${JWT_ISSUER:hades-backend}
+      audience: ${JWT_AUDIENCE:kairos-frontend}
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001}
+      allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS,PATCH}
+      allowed-headers: ${CORS_ALLOWED_HEADERS:*}
+      exposed-headers: ${CORS_EXPOSED_HEADERS:X-Total-Count,X-Page-Number,X-Page-Size}
+      allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
+      max-age: ${CORS_MAX_AGE:3600}
+    rate-limiting:
+      enabled: ${RATE_LIMITING_ENABLED:true}
+      requests-per-minute: ${RATE_LIMITING_RPM:100}
+      burst-capacity: ${RATE_LIMITING_BURST:10}
+  
+  # Multi-Tenancy Configuration
+  multitenancy:
+    enabled: ${MULTITENANCY_ENABLED:true}
+    header-name: ${TENANT_HEADER_NAME:X-Tenant-ID}
+    default-tenant: ${DEFAULT_TENANT_ID:default}
+    isolation-level: ${TENANT_ISOLATION_LEVEL:SCHEMA}
+    max-tenants-per-instance: ${MAX_TENANTS_PER_INSTANCE:1000}
+  
+  # EligibilityAtoms Configuration
+  atoms:
+    cache-enabled: ${ATOMS_CACHE_ENABLED:true}
+    cache-ttl: ${ATOMS_CACHE_TTL:1800}
+    max-composition-depth: ${ATOMS_MAX_COMPOSITION_DEPTH:10}
+    execution-timeout: ${ATOMS_EXECUTION_TIMEOUT:5000}
+    parallel-execution: ${ATOMS_PARALLEL_EXECUTION:true}
+    validation-enabled: ${ATOMS_VALIDATION_ENABLED:true}
+  
+  # Moment Management Configuration
+  moments:
+    cache-enabled: ${MOMENTS_CACHE_ENABLED:true}
+    cache-ttl: ${MOMENTS_CACHE_TTL:3600}
+    max-variants: ${MOMENTS_MAX_VARIANTS:10}
+    versioning-enabled: ${MOMENTS_VERSIONING_ENABLED:true}
+    approval-workflow: ${MOMENTS_APPROVAL_WORKFLOW:false}
+  
+  # Decision Engine Configuration
+  decision-engine:
+    cache-enabled: ${DECISION_CACHE_ENABLED:true}
+    cache-ttl: ${DECISION_CACHE_TTL:300}
+    max-concurrent-decisions: ${DECISION_MAX_CONCURRENT:100}
+    timeout: ${DECISION_TIMEOUT:3000}
+    fallback-enabled: ${DECISION_FALLBACK_ENABLED:true}
+    audit-enabled: ${DECISION_AUDIT_ENABLED:true}
+  
+  # Theme Configuration
+  theme:
+    css-cache-duration: ${THEME_CSS_CACHE_DURATION:3600}
+    max-custom-css-size: ${THEME_MAX_CUSTOM_CSS_SIZE:51200}
+    default-theme-enabled: ${THEME_DEFAULT_ENABLED:true}
+    custom-themes-enabled: ${THEME_CUSTOM_ENABLED:true}
+    theme-creator-enabled: ${THEME_CREATOR_ENABLED:true}
+    validation-enabled: ${THEME_VALIDATION_ENABLED:true}
+  
+  # Analytics Configuration
+  analytics:
+    enabled: ${ANALYTICS_ENABLED:true}
+    batch-size: ${ANALYTICS_BATCH_SIZE:100}
+    flush-interval: ${ANALYTICS_FLUSH_INTERVAL:60000}
+    retention-days: ${ANALYTICS_RETENTION_DAYS:90}
+  
+  # Feature Flags
+  features:
+    experimentation: ${FEATURE_EXPERIMENTATION:true}
+    ai-optimization: ${FEATURE_AI_OPTIMIZATION:false}
+    real-time-updates: ${FEATURE_REAL_TIME_UPDATES:true}
+    webhook-system: ${FEATURE_WEBHOOK_SYSTEM:true}
+    graphql-api: ${FEATURE_GRAPHQL_API:false}
+
+# =============================================================================
+# EXTERNAL SERVICES CONFIGURATION
+# =============================================================================
+external:
+  # Email Service
+  email:
+    provider: ${EMAIL_PROVIDER:smtp}
+    templates-enabled: ${EMAIL_TEMPLATES_ENABLED:true}
+    
+  # Webhook Configuration
+  webhooks:
+    enabled: ${WEBHOOKS_ENABLED:true}
+    timeout: ${WEBHOOK_TIMEOUT:30000}
+    retry-attempts: ${WEBHOOK_RETRY_ATTEMPTS:3}
+    retry-delay: ${WEBHOOK_RETRY_DELAY:5000}
+    
+  # AI/ML Services
+  ai:
+    enabled: ${AI_ENABLED:false}
+    provider: ${AI_PROVIDER:openai}
+    api-key: ${AI_API_KEY:}
+    model: ${AI_MODEL:gpt-3.5-turbo}
+    timeout: ${AI_TIMEOUT:30000}
+
+---
+# =============================================================================
+# DEVELOPMENT PROFILE
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: development
+  
+  jpa:
     show-sql: true
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.H2Dialect
         format_sql: true
-    open-in-view: false
+        use_sql_comments: true
 
-# Server Configuration
-server:
-  port: 8080
-  servlet:
-    context-path: /api/v1
-
-# Logging Configuration
 logging:
   level:
-    com.kairos.hades: INFO
-    org.springframework.web: INFO
+    com.kairos.hades: DEBUG
     org.hibernate.SQL: DEBUG
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    org.springframework.web: DEBUG
 
-# Actuator Configuration
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
-      base-path: /actuator
-  endpoint:
-    health:
-      show-details: always
+hades:
+  security:
+    cors:
+      allowed-origins: "*"
+
+---
+# =============================================================================
+# PRODUCTION PROFILE
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: production
+  
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        use_sql_comments: false
+
+logging:
+  level:
+    root: WARN
+    com.kairos.hades: INFO
+
+hades:
+  api:
+    error:
+      include-stack-trace: false
+      include-internal-details: false
+  
+  security:
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:https://app.kairos.com}
+
+---
+# =============================================================================
+# TEST PROFILE
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: test
+  
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  
+  cache:
+    type: simple
+
+hades:
+  multitenancy:
+    enabled: false
