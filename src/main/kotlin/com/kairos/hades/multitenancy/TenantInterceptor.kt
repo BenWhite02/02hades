@@ -1,42 +1,45 @@
 // =============================================================================
-
 // File: src/main/kotlin/com/kairos/hades/multitenancy/TenantInterceptor.kt
 // 🔥 HADES Tenant Interceptor
-// HTTP interceptor to extract and set tenant context from requests
+// Author: Sankhadeep Banerjee
+// HTTP interceptor for automatic tenant resolution and context setup
+// =============================================================================
 
 package com.kairos.hades.multitenancy
 
-import com.kairos.hades.config.HadesProperties
-import com.kairos.hades.exception.TenantNotFoundException
-import com.kairos.hades.service.TenantService
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 import org.springframework.web.servlet.HandlerInterceptor
 import org.springframework.web.servlet.ModelAndView
+import java.util.*
 
 /**
- * Interceptor to handle tenant context for incoming HTTP requests
+ * Interceptor to automatically resolve and set tenant context from HTTP requests
+ * Supports multiple tenant resolution strategies
  */
 @Component
 class TenantInterceptor @Autowired constructor(
     private val tenantContext: TenantContext,
-    private val tenantService: TenantService,
-    private val hadesProperties: HadesProperties
+    private val tenantResolver: TenantResolver
 ) : HandlerInterceptor {
     
     companion object {
         private val logger = LoggerFactory.getLogger(TenantInterceptor::class.java)
-        private val EXCLUDED_PATHS = setOf(
-            "/actuator",
-            "/swagger-ui",
-            "/v3/api-docs",
-            "/health",
-            "/info",
-            "/metrics"
-        )
+        
+        // MDC keys for logging
+        const val MDC_TENANT_ID = "tenantId"
+        const val MDC_USER_ID = "userId"
+        const val MDC_REQUEST_ID = "requestId"
+        const val MDC_SESSION_ID = "sessionId"
+        
+        // Request attributes
+        const val ATTR_TENANT_ID = "hades.tenantId"
+        const val ATTR_USER_ID = "hades.userId"
+        const val ATTR_REQUEST_ID = "hades.requestId"
     }
     
     override fun preHandle(
@@ -44,43 +47,47 @@ class TenantInterceptor @Autowired constructor(
         response: HttpServletResponse,
         handler: Any
     ): Boolean {
-        val requestURI = request.requestURI
-        
-        // Skip tenant resolution for excluded paths
-        if (EXCLUDED_PATHS.any { requestURI.startsWith(it) }) {
-            tenantContext.setTenantId(TenantContext.SYSTEM_TENANT_ID)
-            return true
-        }
-        
         try {
-            val tenantId = resolveTenantId(request)
+            // Generate or extract request ID for tracing
+            val requestId = extractRequestId(request)
+            tenantContext.setRequestId(requestId)
             
-            // Validate tenant exists and is active
-            if (hadesProperties.multitenancy.enabled && tenantId != TenantContext.SYSTEM_TENANT_ID) {
-                val tenant = tenantService.findByIdOrSlug(tenantId)
-                if (tenant == null || !tenant.isActive()) {
-                    logger.warn("Invalid or inactive tenant: {}", tenantId)
-                    throw TenantNotFoundException("Tenant '$tenantId' not found or inactive")
-                }
+            // Resolve tenant from request
+            val tenantId = tenantResolver.resolveTenant(request)
+            if (tenantId.isNullOrBlank()) {
+                logger.warn("Could not resolve tenant ID from request: {}", request.requestURI)
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Tenant identification required")
+                return false
             }
             
+            // Set tenant context
             tenantContext.setTenantId(tenantId)
             
-            // Also extract user ID if available (from JWT token, etc.)
-            val userId = extractUserId(request)
-            if (userId != null) {
-                tenantContext.setUserId(userId)
+            // Try to resolve user context if available
+            val userInfo = extractUserInfo(request)
+            if (userInfo != null) {
+                tenantContext.setUserContext(
+                    userInfo.userId,
+                    userInfo.roles,
+                    userInfo.sessionId
+                )
             }
             
-            logger.debug("Set tenant context for request: tenantId={}, userId={}, path={}", 
-                tenantId, userId, requestURI)
+            // Set request attributes for downstream use
+            request.setAttribute(ATTR_TENANT_ID, tenantId)
+            request.setAttribute(ATTR_USER_ID, tenantContext.getUserId())
+            request.setAttribute(ATTR_REQUEST_ID, requestId)
+            
+            // Setup MDC for structured logging
+            setupMDC()
+            
+            logger.debug("Tenant context established: {}", tenantContext.getContextString())
             
             return true
             
-        } catch (exception: Exception) {
-            logger.error("Failed to resolve tenant context for request: {}", requestURI, exception)
-            response.status = HttpServletResponse.SC_BAD_REQUEST
-            response.writer.write("""{"error": "Invalid tenant context", "message": "${exception.message}"}""")
+        } catch (e: Exception) {
+            logger.error("Error setting up tenant context", e)
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal server error")
             return false
         }
     }
@@ -91,8 +98,11 @@ class TenantInterceptor @Autowired constructor(
         handler: Any,
         modelAndView: ModelAndView?
     ) {
-        // Add tenant ID to response headers for debugging
+        // Add tenant information to response headers if needed
         response.setHeader("X-Tenant-ID", tenantContext.getTenantId())
+        response.setHeader("X-Request-ID", tenantContext.getRequestId())
+        
+        logger.debug("Request completed for tenant: {}", tenantContext.getTenantId())
     }
     
     override fun afterCompletion(
@@ -101,93 +111,308 @@ class TenantInterceptor @Autowired constructor(
         handler: Any,
         ex: Exception?
     ) {
-        // Clear tenant context after request completion
-        tenantContext.clearContext()
-        logger.debug("Cleared tenant context after request completion")
-    }
-    
-    /**
-     * Resolve tenant ID from request
-     * Priority: Header > Subdomain > Default
-     */
-    private fun resolveTenantId(request: HttpServletRequest): String {
-        // 1. Check X-Tenant-ID header
-        val headerTenantId = request.getHeader(hadesProperties.multitenancy.headerName)
-        if (!headerTenantId.isNullOrBlank()) {
-            logger.debug("Resolved tenant from header: {}", headerTenantId)
-            return headerTenantId.trim()
-        }
-        
-        // 2. Check subdomain (e.g., tenant1.kairos.app -> tenant1)
-        val host = request.getHeader("Host") ?: request.serverName
-        if (host != null) {
-            val subdomainTenant = extractTenantFromSubdomain(host)
-            if (subdomainTenant != null) {
-                logger.debug("Resolved tenant from subdomain: {}", subdomainTenant)
-                return subdomainTenant
+        try {
+            // Log any exceptions with tenant context
+            if (ex != null) {
+                logger.error("Request failed for tenant: {} - {}", 
+                    tenantContext.getTenantId(), ex.message, ex)
             }
-        }
-        
-        // 3. Check path parameter (e.g., /api/v1/tenant1/...)
-        val pathTenant = extractTenantFromPath(request.requestURI)
-        if (pathTenant != null) {
-            logger.debug("Resolved tenant from path: {}", pathTenant)
-            return pathTenant
-        }
-        
-        // 4. Fall back to default tenant
-        val defaultTenant = hadesProperties.multitenancy.defaultTenant
-        logger.debug("Using default tenant: {}", defaultTenant)
-        return defaultTenant
-    }
-    
-    /**
-     * Extract tenant ID from subdomain
-     */
-    private fun extractTenantFromSubdomain(host: String): String? {
-        val parts = host.lowercase().split(".")
-        
-        // For subdomains like tenant1.kairos.app, extract tenant1
-        if (parts.size >= 3 && !parts[0].equals("www", ignoreCase = true)) {
-            val subdomain = parts[0]
             
-            // Validate subdomain format (alphanumeric and hyphens only)
-            if (subdomain.matches(Regex("^[a-z0-9-]+$")) && subdomain.length in 3..50) {
-                return subdomain
+            // Clear MDC
+            clearMDC()
+            
+            // Clear tenant context to prevent memory leaks
+            tenantContext.clear()
+            
+        } catch (e: Exception) {
+            logger.error("Error cleaning up tenant context", e)
+        }
+    }
+    
+    /**
+     * Extract or generate request ID for tracing
+     */
+    private fun extractRequestId(request: HttpServletRequest): String {
+        // Try common request ID headers
+        val headers = listOf(
+            "X-Request-ID",
+            "X-Correlation-ID", 
+            "X-Trace-ID",
+            "Request-ID"
+        )
+        
+        for (header in headers) {
+            val value = request.getHeader(header)
+            if (!value.isNullOrBlank()) {
+                return value
             }
         }
         
+        // Generate new request ID
+        return UUID.randomUUID().toString()
+    }
+    
+    /**
+     * Extract user information from request
+     */
+    private fun extractUserInfo(request: HttpServletRequest): UserInfo? {
+        return try {
+            // Extract from JWT token if present
+            val authHeader = request.getHeader("Authorization")
+            if (authHeader?.startsWith("Bearer ") == true) {
+                val token = authHeader.substring(7)
+                parseJwtToken(token)
+            } else {
+                // Extract from session if available
+                extractFromSession(request)
+            }
+        } catch (e: Exception) {
+            logger.debug("Could not extract user info from request", e)
+            null
+        }
+    }
+    
+    /**
+     * Parse JWT token to extract user information
+     */
+    private fun parseJwtToken(token: String): UserInfo? {
+        // This would be implemented with your JWT library
+        // For now, returning null as placeholder
+        // TODO: Implement JWT parsing
         return null
     }
     
     /**
-     * Extract tenant ID from request path
+     * Extract user info from HTTP session
      */
-    private fun extractTenantFromPath(requestURI: String): String? {
-        // Pattern: /api/v1/tenant/{tenantId}/...
-        val pathPattern = Regex("/api/v[0-9]+/tenant/([a-z0-9-]+)")
-        val matchResult = pathPattern.find(requestURI)
-        
-        return matchResult?.groupValues?.get(1)
+    private fun extractFromSession(request: HttpServletRequest): UserInfo? {
+        return try {
+            val session = request.getSession(false)
+            if (session != null) {
+                val userId = session.getAttribute("userId") as? String
+                val roles = session.getAttribute("roles") as? Set<String>
+                val sessionId = session.id
+                
+                if (userId != null) {
+                    UserInfo(userId, roles ?: emptySet(), sessionId)
+                } else null
+            } else null
+        } catch (e: Exception) {
+            logger.debug("Error extracting user info from session", e)
+            null
+        }
     }
     
     /**
-     * Extract user ID from request (JWT token, session, etc.)
+     * Setup MDC (Mapped Diagnostic Context) for structured logging
      */
-    private fun extractUserId(request: HttpServletRequest): String? {
-        // Implementation depends on authentication mechanism
-        // This is a placeholder - actual implementation would extract from JWT or session
+    private fun setupMDC() {
+        MDC.put(MDC_TENANT_ID, tenantContext.getTenantId())
+        MDC.put(MDC_REQUEST_ID, tenantContext.getRequestId())
         
-        // Check for user ID in custom header
-        val userIdHeader = request.getHeader("X-User-ID")
-        if (!userIdHeader.isNullOrBlank()) {
-            return userIdHeader.trim()
+        tenantContext.getUserId()?.let { 
+            MDC.put(MDC_USER_ID, it)
         }
         
-        // TODO: Extract from JWT token
-        // val jwtToken = extractJwtFromRequest(request)
-        // return extractUserIdFromJwt(jwtToken)
+        tenantContext.getSessionId()?.let {
+            MDC.put(MDC_SESSION_ID, it)
+        }
+    }
+    
+    /**
+     * Clear MDC to prevent memory leaks
+     */
+    private fun clearMDC() {
+        MDC.remove(MDC_TENANT_ID)
+        MDC.remove(MDC_USER_ID)
+        MDC.remove(MDC_REQUEST_ID)
+        MDC.remove(MDC_SESSION_ID)
+    }
+    
+    /**
+     * Data class for user information
+     */
+    data class UserInfo(
+        val userId: String,
+        val roles: Set<String>,
+        val sessionId: String?
+    )
+}
+
+// =============================================================================
+// File: src/main/kotlin/com/kairos/hades/multitenancy/TenantResolver.kt
+// 🔥 HADES Tenant Resolver
+// Author: Sankhadeep Banerjee
+// Multiple strategies for resolving tenant from HTTP requests
+// =============================================================================
+
+package com.kairos.hades.multitenancy
+
+import jakarta.servlet.http.HttpServletRequest
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Component
+
+/**
+ * Resolves tenant ID from HTTP requests using multiple strategies
+ */
+@Component
+class TenantResolver {
+    
+    companion object {
+        private val logger = LoggerFactory.getLogger(TenantResolver::class.java)
         
+        // Header names for tenant identification
+        const val HEADER_TENANT_ID = "X-Tenant-ID"
+        const val HEADER_TENANT_SLUG = "X-Tenant-Slug"
+        const val HEADER_API_KEY = "X-API-Key"
+        
+        // URL patterns
+        const val TENANT_PATH_PATTERN = "^/api/v1/tenants/([^/]+)/.*"
+        const val SUBDOMAIN_PATTERN = "^([^.]+)\\."
+    }
+    
+    /**
+     * Resolve tenant ID from HTTP request using multiple strategies
+     */
+    fun resolveTenant(request: HttpServletRequest): String? {
+        // Strategy 1: Direct tenant ID header
+        request.getHeader(HEADER_TENANT_ID)?.let { tenantId ->
+            if (tenantId.isNotBlank()) {
+                logger.debug("Resolved tenant from header {}: {}", HEADER_TENANT_ID, tenantId)
+                return tenantId
+            }
+        }
+        
+        // Strategy 2: Tenant slug header (would need to resolve to ID)
+        request.getHeader(HEADER_TENANT_SLUG)?.let { slug ->
+            if (slug.isNotBlank()) {
+                val tenantId = resolveTenantBySlug(slug)
+                if (tenantId != null) {
+                    logger.debug("Resolved tenant from slug header: {} -> {}", slug, tenantId)
+                    return tenantId
+                }
+            }
+        }
+        
+        // Strategy 3: Extract from URL path
+        val pathTenantId = extractTenantFromPath(request.requestURI)
+        if (pathTenantId != null) {
+            logger.debug("Resolved tenant from URL path: {}", pathTenantId)
+            return pathTenantId
+        }
+        
+        // Strategy 4: Extract from subdomain
+        val subdomainTenantId = extractTenantFromSubdomain(request)
+        if (subdomainTenantId != null) {
+            logger.debug("Resolved tenant from subdomain: {}", subdomainTenantId)
+            return subdomainTenantId
+        }
+        
+        // Strategy 5: Resolve from API key
+        request.getHeader(HEADER_API_KEY)?.let { apiKey ->
+            if (apiKey.isNotBlank()) {
+                val tenantId = resolveTenantByApiKey(apiKey)
+                if (tenantId != null) {
+                    logger.debug("Resolved tenant from API key")
+                    return tenantId
+                }
+            }
+        }
+        
+        // Strategy 6: Default tenant for system/health endpoints
+        if (isSystemEndpoint(request.requestURI)) {
+            logger.debug("Using system tenant for system endpoint: {}", request.requestURI)
+            return "system"
+        }
+        
+        logger.warn("Could not resolve tenant from request: {} {}", 
+            request.method, request.requestURI)
+        return null
+    }
+    
+    /**
+     * Extract tenant ID from URL path
+     * Expects pattern: /api/v1/tenants/{tenantId}/...
+     */
+    private fun extractTenantFromPath(uri: String): String? {
+        return try {
+            val regex = Regex(TENANT_PATH_PATTERN)
+            val matchResult = regex.find(uri)
+            matchResult?.groupValues?.get(1)
+        } catch (e: Exception) {
+            logger.debug("Error extracting tenant from path: {}", uri, e)
+            null
+        }
+    }
+    
+    /**
+     * Extract tenant from subdomain
+     * Expects pattern: {tenant}.domain.com
+     */
+    private fun extractTenantFromSubdomain(request: HttpServletRequest): String? {
+        return try {
+            val host = request.getHeader("Host") ?: return null
+            val regex = Regex(SUBDOMAIN_PATTERN)
+            val matchResult = regex.find(host)
+            val subdomain = matchResult?.groupValues?.get(1)
+            
+            // Filter out common non-tenant subdomains
+            if (subdomain != null && !isSystemSubdomain(subdomain)) {
+                // Would resolve subdomain to tenant ID via database lookup
+                resolveTenantBySubdomain(subdomain)
+            } else null
+        } catch (e: Exception) {
+            logger.debug("Error extracting tenant from subdomain", e)
+            null
+        }
+    }
+    
+    /**
+     * Check if subdomain is a system subdomain (not a tenant)
+     */
+    private fun isSystemSubdomain(subdomain: String): Boolean {
+        val systemSubdomains = setOf(
+            "www", "api", "admin", "app", "dashboard", 
+            "docs", "status", "health", "dev", "staging"
+        )
+        return systemSubdomains.contains(subdomain.lowercase())
+    }
+    
+    /**
+     * Check if endpoint is a system endpoint that doesn't require tenant
+     */
+    private fun isSystemEndpoint(uri: String): Boolean {
+        val systemPaths = setOf(
+            "/actuator", "/health", "/metrics", "/info",
+            "/swagger", "/api-docs", "/favicon.ico"
+        )
+        return systemPaths.any { uri.startsWith(it) }
+    }
+    
+    /**
+     * Resolve tenant ID by slug (placeholder - would query database)
+     */
+    private fun resolveTenantBySlug(slug: String): String? {
+        // TODO: Implement database lookup
+        // return tenantRepository.findBySlug(slug)?.id
+        return null
+    }
+    
+    /**
+     * Resolve tenant ID by subdomain (placeholder - would query database)
+     */
+    private fun resolveTenantBySubdomain(subdomain: String): String? {
+        // TODO: Implement database lookup
+        // return applicationRepository.findBySubdomain(subdomain)?.tenantId
+        return null
+    }
+    
+    /**
+     * Resolve tenant ID by API key (placeholder - would query database)
+     */
+    private fun resolveTenantByApiKey(apiKey: String): String? {
+        // TODO: Implement database lookup
+        // return apiKeyRepository.findByKey(apiKey)?.tenantId
         return null
     }
 }

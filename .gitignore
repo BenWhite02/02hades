@@ -1,345 +1,64 @@
-﻿# ==============================================================================
-# HADES BACKEND .GITIGNORE 🔥
-# Enhanced .gitignore for Kotlin + Spring Boot project
-# ==============================================================================
+﻿# =============================================================================
+# HADES BACKEND - GITIGNORE CONFIGURATION
+# =============================================================================
+# Author: Sankhadeep Banerjee
+# Project: Hades - Marketing Decisioning Backend Engine
+# =============================================================================
 
-# File: .gitignore
-# Project: HADES (Backend - Kotlin + Spring Boot)
-# Purpose: Prevent unnecessary files from being committed to repository
-
-# ==============================================================================
-# GRADLE BUILD SYSTEM
-# ==============================================================================
-
-# Gradle build artifacts
+# Gradle
 .gradle/
 build/
-gradle-app.setting
-!gradle-wrapper.jar
-!gradle-wrapper.properties
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+gradlew
+gradlew.bat
 
-# Gradle cache
-.gradle/caches/
-.gradle/wrapper/
-
-# Gradle build outputs
-*/build/
-out/
-
-# ==============================================================================
-# KOTLIN & JAVA
-# ==============================================================================
-
-# Compiled class files
+# Kotlin & Java
 *.class
-
-# JAR files (unless you specifically want to include them)
 *.jar
-!gradle-wrapper.jar
-
-# WAR files
 *.war
-
-# EAR files
 *.ear
+*.kt.orig
+.kotlin/
 
-# JVM crash logs
-hs_err_pid*
-replay_pid*
-
-# JVM heap dumps
-*.hprof
-
-# ==============================================================================
-# SPRING BOOT
-# ==============================================================================
-
-# Spring Boot application properties (environment-specific)
-application-local.yml
-application-local.yaml
-application-local.properties
-application-dev.yml
-application-dev.yaml
-application-dev.properties
-application-test.yml
-application-test.yaml
-application-test.properties
-application-prod.yml
-application-prod.yaml
-application-prod.properties
-
-# Keep example configurations
-!application-example.yml
-!application-example.yaml
-!application-example.properties
-
-# Spring Boot logs
-spring.log*
-
-# ==============================================================================
-# DATABASE
-# ==============================================================================
-
-# Local database files
-*.db
-*.sqlite
-*.sqlite3
-*.h2.db
-
-# Database dumps
-*.sql.dump
-*.sql.gz
-
-# Flyway local config
-flyway-local.conf
-
-# ==============================================================================
-# IDE FILES
-# ==============================================================================
-
-# IntelliJ IDEA
+# IDE Files
 .idea/
+*.iws
 *.iml
 *.ipr
-*.iws
-*.idea
-
-# Eclipse
-.project
-.classpath
-.settings/
-.metadata/
-bin/
-tmp/
-*.tmp
-*.bak
-*.swp
-*~.nib
-local.properties
-.factorypath
-
-# NetBeans
-nbproject/private/
-build/
-nbbuild/
-dist/
-nbdist/
-.nb-gradle/
-
-# Visual Studio Code
+out/
 .vscode/
 *.code-workspace
 
-# Vim
-*.swp
-*.swo
-*~
-
-# Emacs
-*~
-\#*\#
-/.emacs.desktop
-/.emacs.desktop.lock
-*.elc
-auto-save-list
-tramp
-.\#*
-
-# ==============================================================================
-# OPERATING SYSTEM FILES
-# ==============================================================================
-
-# macOS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-*.cab
-*.msi
-*.msm
-*.msp
-
-# Linux
-*~
-.nfs*
-
-# ==============================================================================
-# LOGS
-# ==============================================================================
-
-# Application logs
-logs/
-*.log
-*.log.*
-*.out
-
-# Log4j
-log4j2.xml
-logback-spring.xml
-
-# ==============================================================================
-# ENVIRONMENT & CONFIGURATION
-# ==============================================================================
-
-# Environment variables
+# Environment & Secrets
 .env
 .env.local
 .env.development
 .env.test
 .env.production
-.env.*.local
-
-# Configuration overrides
-config/local/
-config/dev/
-config/test/
-
-# ==============================================================================
-# SECURITY
-# ==============================================================================
-
-# Private keys
-*.pem
-*.key
+application-secrets.yml
+secrets.yml
 *.p12
 *.jks
-*.keystore
-*.truststore
-
-# Certificates
+*.key
 *.crt
-*.cer
 
-# ==============================================================================
-# TESTING
-# ==============================================================================
+# Logs
+logs/
+*.log
+*.out
 
-# Test reports
-**/test-results/
-**/test-reports/
+# Database
+*.db
+*.dump
 
-# Coverage reports
-**/coverage/
-**/jacoco/
-jacoco.exec
+# OS Files
+.DS_Store
+Thumbs.db
+Desktop.ini
 
-# ==============================================================================
-# CACHING & TEMPORARY FILES
-# ==============================================================================
-
-# Temporary files
-*.tmp
-*.temp
+# Temporary
+tmp/
+temp/
 .tmp/
-.cache/
-
-# ==============================================================================
-# DOCUMENTATION
-# ==============================================================================
-
-# Generated documentation
-**/docs/build/
-**/docs/generated/
-
-# ==============================================================================
-# PACKAGE MANAGERS (if any frontend dependencies exist)
-# ==============================================================================
-
-# Node.js (if using npm/yarn for any frontend assets)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-package-lock.json
-yarn.lock
-.pnpm-store/
-
-# Frontend build outputs
-dist/
-.cache/
-.vite/
-.nuxt/
-.next/
-
-# ==============================================================================
-# CLOUD & DEPLOYMENT
-# ==============================================================================
-
-# Docker
-.dockerignore
-docker-compose.override.yml
-
-# Kubernetes
-k8s-local/
-
-# Terraform
-*.tfstate
-*.tfstate.*
-.terraform/
-
-# ==============================================================================
-# MONITORING & PROFILING
-# ==============================================================================
-
-# Application Performance Monitoring
-apm-agent.log
-
-# JProfiler
-*.jprofiler
-
-# YourKit
-*.snapshots
-
-# ==============================================================================
-# CUSTOM HADES-SPECIFIC PATTERNS
-# ==============================================================================
-
-# Hades-specific temporary files
-hades-temp/
-hades-cache/
-
-# Local development overrides
-local-config/
-dev-overrides/
-
-# Generated source files (if any)
-generated/
-generated-sources/
-
-# Backup files
-*.backup
-*_backup
-*.bak
-
-# Cleanup backups from our cleanup script
-hades-cleanup-backup-*/
-
-# ==============================================================================
-# SPECIAL CASES - KEEP THESE FILES
-# ==============================================================================
-
-# Force include important wrapper files
-!gradle/wrapper/gradle-wrapper.jar
-!gradle/wrapper/gradle-wrapper.properties
-
-# Force include example configurations
-!src/main/resources/application-example.yml
-!config/application-example.properties
-
-# Force include important documentation
-!README.md
-!HELP.md
-!CONTRIBUTING.md
-
-# ==============================================================================
-# END OF HADES .GITIGNORE
-# ==============================================================================
